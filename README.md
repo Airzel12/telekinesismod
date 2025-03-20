@@ -1,135 +1,49 @@
-using BepInEx;
-using BepInEx.Configuration;
-using UnityEngine;
-using System.Collections.Generic;
-using HarmonyLib;
-using GameNetcodeStuff;
+This mod adds telekinetic abilities to your character in Lethal Company, allowing you to grab and throw objects or enemies using psychic powers!
 
-namespace TelekinesisMod
-{
-    [BepInPlugin("com.username.telekinesis", "Telekinesis Mod", "1.0.0")]
-    public class TelekinesisMod : BaseUnityPlugin
-    {
-        private static ConfigEntry<float> grabRange;
-        private static ConfigEntry<float> throwForce;
-        private static ConfigEntry<int> maxGrabbedObjects;
-        private static List<GrabbableObject> grabbedObjects = new List<GrabbableObject>();
-        private static PlayerControllerB localPlayer;
-        private Harmony harmony;
+## Features
+- Grab objects & enemies with E key
+- Throw objects with F key
+- Carry up to 2 objects at once (configurable)
+- Customizable grab range and throw force
+- Visual effects (particles and glow)
+- Sound effects
+- Network synchronized for multiplayer
 
-        private void Awake()
-        {
-            // Configuration settings
-            grabRange = Config.Bind("General",
-                                  "GrabRange",
-                                  5f,
-                                  "The range within which you can grab objects");
+## Configuration
+The mod includes several configurable settings in the BepInEx config file:
 
-            throwForce = Config.Bind("General",
-                                   "ThrowForce",
-                                   10f,
-                                   "The force with which objects are thrown");
+### General Settings
+- `GrabRange`: Distance within which you can grab objects (1-10 units)
+- `ThrowForce`: Strength of the throw (1-20 force units)
+- `MaxGrabbedObjects`: Maximum number of objects you can carry (1-5)
 
-            maxGrabbedObjects = Config.Bind("General",
-                                          "MaxGrabbedObjects",
-                                          2,
-                                          "Maximum number of objects that can be grabbed simultaneously");
+### Visual Effects
+- `EnableVisualEffects`: Toggle particle effects and glow
+- `UpdateRate`: How frequently grabbed objects update their position
 
-            // Apply patches
-            harmony = new Harmony("com.username.telekinesis");
-            harmony.PatchAll();
-        }
+### Sound Effects
+- `EnableSoundEffects`: Toggle sound effects for grabbing and throwing
 
-        [HarmonyPatch(typeof(PlayerControllerB))]
-        private class PlayerControllerBPatch
-        {
-            [HarmonyPatch("Update")]
-            [HarmonyPostfix]
-            private static void UpdatePostfix(PlayerControllerB __instance)
-            {
-                if (__instance != localPlayer)
-                {
-                    localPlayer = __instance;
-                }
+## Requirements
+- BepInEx
+- HarmonyLib
+- Lethal Company
 
-                if (!__instance.IsOwner || __instance.inTerminalMenu || __instance.isTypingChat)
-                    return;
+## Installation
+1. Install BepInEx to your Lethal Company installation
+2. Place the mod DLL in the BepInEx/plugins folder
+3. Configure settings in BepInEx/config/TelekinesisMod.cfg
 
-                HandleTelekinesis(__instance);
-            }
-        }
+## Compilation
+1. Open the solution in Visual Studio 2022 or later
+2. Build the project in Release configuration
+3. The DLL will be output to the `bin\Release\netstandard2.0` folder
 
-        private static void HandleTelekinesis(PlayerControllerB player)
-        {
-            if (Input.GetKeyDown(KeyCode.E))
-            {
-                TryGrabObject(player);
-            }
+## Usage
+- Press E to grab objects within range
+- Press F to throw grabbed objects
+- Objects will glow cyan when grabbed
+- Particle effects will appear when grabbing and throwing
 
-            if (Input.GetKeyDown(KeyCode.F))
-            {
-                ThrowObjects(player);
-            }
-
-            UpdateGrabbedObjectsPosition(player);
-        }
-
-        private static void TryGrabObject(PlayerControllerB player)
-        {
-            if (grabbedObjects.Count >= maxGrabbedObjects.Value)
-            {
-                HUDManager.Instance.DisplayTip("Telekinesis", "Cannot grab more objects!");
-                return;
-            }
-
-            Ray ray = new Ray(player.gameplayCamera.transform.position, player.gameplayCamera.transform.forward);
-            if (Physics.Raycast(ray, out RaycastHit hit, grabRange.Value))
-            {
-                GrabbableObject grabbable = hit.collider.GetComponent<GrabbableObject>();
-                if (grabbable != null && !grabbable.isHeld)
-                {
-                    // Request ownership through the game's network system
-                    grabbable.GrabObject();
-                    grabbedObjects.Add(grabbable);
-                }
-            }
-        }
-
-        private static void ThrowObjects(PlayerControllerB player)
-        {
-            foreach (GrabbableObject obj in grabbedObjects)
-            {
-                if (obj != null)
-                {
-                    Vector3 throwDirection = player.gameplayCamera.transform.forward;
-                    
-                    // Use the game's existing throw mechanics
-                    obj.ThrowObject(throwDirection * throwForce.Value);
-                }
-            }
-            grabbedObjects.Clear();
-        }
-
-        private static void UpdateGrabbedObjectsPosition(PlayerControllerB player)
-        {
-            float spacing = 1f;
-            for (int i = 0; i < grabbedObjects.Count; i++)
-            {
-                if (grabbedObjects[i] != null)
-                {
-                    Vector3 targetPosition = player.gameplayCamera.transform.position + 
-                                          player.gameplayCamera.transform.forward * 2f + 
-                                          player.gameplayCamera.transform.right * (i - ((grabbedObjects.Count - 1) / 2f)) * spacing;
-                    
-                    // Use the game's network-aware position system
-                    grabbedObjects[i].targetPosition = targetPosition;
-                    grabbedObjects[i].transform.position = Vector3.Lerp(
-                        grabbedObjects[i].transform.position,
-                        targetPosition,
-                        Time.deltaTime * 10f
-                    );
-                }
-            }
-        }
-    }
-}
+## Credits
+- Airzel and zeeblo - Mod author
