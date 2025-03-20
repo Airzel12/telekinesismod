@@ -1,0 +1,14 @@
+"{
+  \"name\": \"Telekinesis Mod\",
+  \"author\": \"YourUsername\",
+  \"description\": \"Adds telekinetic abilities to your character in Lethal Company\",
+  \"version\": \"1.0.0\",
+  \"assemblyName\": \"TelekinesisMod\",
+  \"assemblyVersion\": \"1.0.0\",
+  \"dependencies\": {
+    \"com.bepis.bepinex\": \"latest\",
+    \"com.harmonylib\": \"latest\"
+  },
+  \"supportedVersions\": {
+    \"Lethal Company\": \"latest\"
+  }
