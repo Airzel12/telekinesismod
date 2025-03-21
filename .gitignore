@@ -1,135 +1,129 @@
 using BepInEx;
-using BepInEx.Configuration;
+using HarmonyLib;
 using UnityEngine;
 using System.Collections.Generic;
-using HarmonyLib;
-using GameNetcodeStuff;
 
 namespace TelekinesisMod
 {
-    [BepInPlugin("com.username.telekinesis", "Telekinesis Mod", "1.0.0")]
+    [BepInPlugin("com.yourname.telekinesis", "Telekinesis Mod", "1.0.0")]
+    [BepInDependency("com.bepinex.harmony")]
     public class TelekinesisMod : BaseUnityPlugin
     {
-        private static ConfigEntry<float> grabRange;
-        private static ConfigEntry<float> throwForce;
-        private static ConfigEntry<int> maxGrabbedObjects;
-        private static List<GrabbableObject> grabbedObjects = new List<GrabbableObject>();
-        private static PlayerControllerB localPlayer;
-        private Harmony harmony;
+        // Configurable settings
+        private const int MaxGrabbedObjects = 2;
+        private const float MaxGrabRange = 5f;
+        private const float MinThrowForce = 5f;
+        private const float MaxThrowForce = 15f;
+        private const float HoldDistance = 2f;
 
-        private void Awake()
+        public static TelekinesisMod Instance; // Singleton for easy access
+        public List<GameObject> GrabbedObjects { get; private set; } = new List<GameObject>();
+        public Transform PlayerTransform { get; private set; }
+
+        void Awake()
         {
-            // Configuration settings
-            grabRange = Config.Bind("General",
-                                  "GrabRange",
-                                  5f,
-                                  "The range within which you can grab objects");
+            Instance = this;
+            Logger.LogInfo("Telekinesis Mod loaded!");
 
-            throwForce = Config.Bind("General",
-                                   "ThrowForce",
-                                   10f,
-                                   "The force with which objects are thrown");
-
-            maxGrabbedObjects = Config.Bind("General",
-                                          "MaxGrabbedObjects",
-                                          2,
-                                          "Maximum number of objects that can be grabbed simultaneously");
-
-            // Apply patches
-            harmony = new Harmony("com.username.telekinesis");
+            Harmony harmony = new Harmony("com.yourname.telekinesis");
             harmony.PatchAll();
         }
 
-        [HarmonyPatch(typeof(PlayerControllerB))]
-        private class PlayerControllerBPatch
+        // Method to set the player transform (called from a patch)
+        public void SetPlayerTransform(Transform player)
         {
-            [HarmonyPatch("Update")]
-            [HarmonyPostfix]
-            private static void UpdatePostfix(PlayerControllerB __instance)
+            if (PlayerTransform == null)
             {
-                if (__instance != localPlayer)
-                {
-                    localPlayer = __instance;
-                }
-
-                if (!__instance.IsOwner || __instance.inTerminalMenu || __instance.isTypingChat)
-                    return;
-
-                HandleTelekinesis(__instance);
+                PlayerTransform = player;
+                Logger.LogDebug("Player transform set!");
             }
         }
 
-        private static void HandleTelekinesis(PlayerControllerB player)
+        // Method to try grabbing an object
+        public void TryGrabObject()
         {
-            if (Input.GetKeyDown(KeyCode.E))
-            {
-                TryGrabObject(player);
-            }
+            if (GrabbedObjects.Count >= MaxGrabbedObjects || PlayerTransform == null) return;
 
+            RaycastHit hit;
+            if (Physics.Raycast(PlayerTransform.position, PlayerTransform.forward, out hit, MaxGrabRange))
+            {
+                GameObject target = hit.collider.gameObject;
+                if (target == PlayerTransform.gameObject || GrabbedObjects.Contains(target))
+                {
+                    Logger.LogDebug($"Cannot grab: {target.name}");
+                    return;
+                }
+
+                float distanceToTarget = Vector3.Distance(PlayerTransform.position, target.transform.position);
+                GrabbedObjects.Add(target);
+                Logger.LogInfo($"Grabbed: {target.name} at distance {distanceToTarget}");
+            }
+        }
+
+        // Method to throw the last grabbed object
+        public void ThrowObject()
+        {
+            if (GrabbedObjects.Count == 0 || PlayerTransform == null) return;
+
+            GameObject toThrow = GrabbedObjects[GrabbedObjects.Count - 1];
+            float distanceWhenGrabbed = Vector3.Distance(PlayerTransform.position, toThrow.transform.position);
+            float throwForce = Mathf.Lerp(MinThrowForce, MaxThrowForce, distanceWhenGrabbed / MaxGrabRange);
+
+            GrabbedObjects.Remove(toThrow);
+            TelekinesisPatches.ThrowObject(toThrow, PlayerTransform.forward, throwForce);
+            Logger.LogInfo($"Thrown: {toThrow.name} with force {throwForce}");
+        }
+    }
+
+    [HarmonyPatch]
+    public class TelekinesisPatches
+    {
+        // Patch to find the player and handle input/update logic
+        // Replace "PlayerControllerB" with the actual player class name from Lethal Company
+        [HarmonyPatch(typeof(PlayerControllerB), "Update")]
+        [HarmonyPostfix]
+        static void PlayerUpdatePatch(PlayerControllerB __instance)
+        {
+            if (TelekinesisMod.Instance == null) return;
+
+            // Set player transform once
+            TelekinesisMod.Instance.SetPlayerTransform(__instance.transform);
+
+            // Input handling
+            if (Input.GetKeyDown(KeyCode.T))
+            {
+                TelekinesisMod.Instance.TryGrabObject();
+            }
             if (Input.GetKeyDown(KeyCode.F))
             {
-                ThrowObjects(player);
+                TelekinesisMod.Instance.ThrowObject();
             }
 
-            UpdateGrabbedObjectsPosition(player);
-        }
-
-        private static void TryGrabObject(PlayerControllerB player)
-        {
-            if (grabbedObjects.Count >= maxGrabbedObjects.Value)
+            // Update grabbed objects
+            foreach (GameObject obj in TelekinesisMod.Instance.GrabbedObjects)
             {
-                HUDManager.Instance.DisplayTip("Telekinesis", "Cannot grab more objects!");
-                return;
-            }
-
-            Ray ray = new Ray(player.gameplayCamera.transform.position, player.gameplayCamera.transform.forward);
-            if (Physics.Raycast(ray, out RaycastHit hit, grabRange.Value))
-            {
-                GrabbableObject grabbable = hit.collider.GetComponent<GrabbableObject>();
-                if (grabbable != null && !grabbable.isHeld)
-                {
-                    // Request ownership through the game's network system
-                    grabbable.GrabObject();
-                    grabbedObjects.Add(grabbable);
-                }
+                Vector3 targetPosition = TelekinesisMod.Instance.PlayerTransform.position + 
+                                        TelekinesisMod.Instance.PlayerTransform.forward * 2f;
+                obj.transform.position = Vector3.Lerp(obj.transform.position, targetPosition, Time.deltaTime * 10f);
             }
         }
 
-        private static void ThrowObjects(PlayerControllerB player)
+        // Method to handle throwing (custom logic)
+        public static void ThrowObject(GameObject obj, Vector3 direction, float force)
         {
-            foreach (GrabbableObject obj in grabbedObjects)
-            {
-                if (obj != null)
-                {
-                    Vector3 throwDirection = player.gameplayCamera.transform.forward;
-                    
-                    // Use the game's existing throw mechanics
-                    obj.ThrowObject(throwDirection * throwForce.Value);
-                }
-            }
-            grabbedObjects.Clear();
+            Vector3 throwVelocity = direction.normalized * force;
+            obj.transform.position += throwVelocity * Time.deltaTime; // Placeholder movement
+
+            // TODO: Patch into Lethal Company's movement system here
+            Debug.Log($"Throwing {obj.name} with force {force}");
         }
 
-        private static void UpdateGrabbedObjectsPosition(PlayerControllerB player)
+        // Optional: Patch for grabbable objects (replace with actual class)
+        [HarmonyPatch(typeof(/* GrabbableObject */), "LateUpdate")]
+        [HarmonyPostfix]
+        static void GrabbableObjectPatch(/* GrabbableObject */ __instance)
         {
-            float spacing = 1f;
-            for (int i = 0; i < grabbedObjects.Count; i++)
-            {
-                if (grabbedObjects[i] != null)
-                {
-                    Vector3 targetPosition = player.gameplayCamera.transform.position + 
-                                          player.gameplayCamera.transform.forward * 2f + 
-                                          player.gameplayCamera.transform.right * (i - ((grabbedObjects.Count - 1) / 2f)) * spacing;
-                    
-                    // Use the game's network-aware position system
-                    grabbedObjects[i].targetPosition = targetPosition;
-                    grabbedObjects[i].transform.position = Vector3.Lerp(
-                        grabbedObjects[i].transform.position,
-                        targetPosition,
-                        Time.deltaTime * 10f
-                    );
-                }
-            }
+            // Add logic here if you need to manipulate grabbable objects directly
         }
     }
 }
