@@ -1,0 +1,31 @@
+using BepInEx;
+using BepInEx.Logging;
+using HarmonyLib;
+using System.Reflection;
+
+namespace TelekinesisMod
+{
+    [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
+    [BepInProcess("Lethal Company.exe")]
+    public class Plugin : BaseUnityPlugin
+    {
+        private readonly Harmony harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
+        internal static ManualLogSource Log;
+        internal static Plugin Instance;
+
+        private void Awake()
+        {
+            Instance = this;
+            Log = Logger;
+            harmony.PatchAll(Assembly.GetExecutingAssembly());
+            Logger.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
+        }
+    }
+
+    internal static class MyPluginInfo
+    {
+        public const string PLUGIN_GUID = "com.username.telekinesis";
+        public const string PLUGIN_NAME = "Telekinesis Mod";
+        public const string PLUGIN_VERSION = "1.0.0";
+    }
+}
